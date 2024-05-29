@@ -382,8 +382,90 @@ func (d *Driver) ControllerGetVolume(context.Context, *csi.ControllerGetVolumeRe
 }
 
 // ControllerModifyVolume modify volume
-func (d *Driver) ControllerModifyVolume(context.Context, *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+func (d *Driver) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
+	volumeID := req.GetVolumeId()
+	if len(volumeID) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in the request")
+	}
+
+	if err := d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_MODIFY_VOLUME); err != nil {
+		return nil, status.Errorf(codes.Internal, "invalid modify volume req: %v", req)
+	}
+	diskURI := volumeID
+
+	if err := azureutils.IsValidDiskURI(diskURI); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "disk URI(%s) is not valid: %v", diskURI, err)
+	}
+
+	diskName, err := azureutils.GetDiskName(diskURI)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+
+	if _, err := d.checkDiskExists(ctx, diskURI); err != nil {
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("Volume not found, failed with error: %v", err))
+	}
+
+	mutableParams := req.GetMutableParameters()
+	diskParams, err := azureutils.ParseDiskParameters(mutableParams)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Failed parsing disk parameters: %v", err)
+	}
+
+	localCloud := d.cloud
+	localDiskController := d.diskController
+
+	// normalize values
+	skuName, err := azureutils.NormalizeStorageAccountType(diskParams.AccountType, localCloud.Config.Cloud, localCloud.Config.DisableAzureStackCloud)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if diskParams.AccountType == "" {
+		skuName = ""
+	}
+
+	if _, err := azureutils.NormalizeCachingMode(diskParams.CachingMode); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if skuName == armcompute.DiskStorageAccountTypesPremiumV2LRS {
+		// PremiumV2LRS only supports None caching mode
+		azureutils.SetKeyValueInMap(diskParams.VolumeContext, consts.CachingModeField, string(v1.AzureDataDiskCachingNone))
+	}
+
+	metricsRequest := "controller_modify_volume"
+
+	klog.V(2).Infof("begin to modify azure disk(%s) account type(%s) rg(%s) location(%s)",
+		diskParams.DiskName, skuName, diskParams.ResourceGroup, diskParams.Location)
+
+	volumeOptions := &ManagedDiskOptions{
+		DiskIOPSReadWrite:  diskParams.DiskIOPSReadWrite,
+		DiskMBpsReadWrite:  diskParams.DiskMBPSReadWrite,
+		DiskName:           diskName,
+		ResourceGroup:      diskParams.ResourceGroup,
+		SubscriptionID:     diskParams.SubscriptionID,
+		StorageAccountType: skuName,
+		SourceResourceID:   volumeID,
+		SourceType:         consts.SourceVolume,
+	}
+
+	mc := metrics.NewMetricContext(consts.AzureDiskCSIDriverName, metricsRequest, d.cloud.ResourceGroup, d.cloud.SubscriptionID, d.Name)
+	isOperationSucceeded := false
+	defer func() {
+		mc.ObserveOperationWithResult(isOperationSucceeded, consts.VolumeID, diskURI)
+	}()
+
+	err = localDiskController.ModifyDisk(ctx, volumeOptions)
+	if err != nil {
+		if strings.Contains(err.Error(), consts.NotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+
+	isOperationSucceeded = true
+	klog.V(2).Infof("modify azure disk(%s) account type(%s) rg(%s) location(%s) successfully", diskParams.DiskName, skuName, diskParams.ResourceGroup, diskParams.Location)
+
+	return &csi.ControllerModifyVolumeResponse{}, err
 }
 
 // ControllerPublishVolume attach an azure disk to a required node
