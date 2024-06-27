@@ -652,7 +652,7 @@ func TestControllerModifyVolume(t *testing.T) {
 			expectedResp: &csi.ControllerModifyVolumeResponse{},
 		},
 		{
-			desc: "success standard with PremiumV2_LRS",
+			desc: "fail with storageAccountType is not allowed to change from or to UltraSSD_LRS or PremiumV2_LRS disk type",
 			req: &csi.ControllerModifyVolumeRequest{
 				VolumeId: testVolumeID,
 				MutableParameters: map[string]string{
@@ -661,8 +661,9 @@ func TestControllerModifyVolume(t *testing.T) {
 					consts.DiskMBPSReadWriteField: "100",
 				},
 			},
-			oldSKU:       &storageAccountTypeUltraSSDLRS,
-			expectedResp: &csi.ControllerModifyVolumeResponse{},
+			oldSKU:          &storageAccountTypeUltraSSDLRS,
+			expectedResp:    nil,
+			expectedErrCode: codes.Internal,
 		},
 		{
 			desc: "fail with no volume id",

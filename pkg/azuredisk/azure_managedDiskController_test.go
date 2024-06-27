@@ -632,6 +632,13 @@ func TestModifyDisk(t *testing.T) {
 		expectedErrMsg     error
 	}{
 		{
+			desc:               "new sku and no error shall be returned if everything is good",
+			diskName:           diskName,
+			storageAccountType: armcompute.DiskStorageAccountTypesStandardLRS,
+			existedDisk:        &armcompute.Disk{Name: pointer.String(disk1Name), SKU: &armcompute.DiskSKU{Name: &storageAccountTypePremiumLRS}, Properties: &armcompute.DiskProperties{DiskIOPSReadWrite: pointer.Int64(100)}},
+			expectedErr:        false,
+		},
+		{
 			desc:               "new diskIOPSReadWrite and no error shall be returned if everything is good",
 			diskName:           diskName,
 			diskIOPSReadWrite:  "200",
@@ -657,6 +664,16 @@ func TestModifyDisk(t *testing.T) {
 			expectedErr:        false,
 		},
 		{
+			desc:               "change from or to UltraSSD_LRS or PremiumV2_LRS disk type shall fail",
+			diskName:           diskName,
+			diskIOPSReadWrite:  "200",
+			diskMBpsReadWrite:  "200",
+			storageAccountType: armcompute.DiskStorageAccountTypesUltraSSDLRS,
+			existedDisk:        &armcompute.Disk{Name: pointer.String(disk1Name), SKU: &armcompute.DiskSKU{Name: &storageAccountTypePremiumLRS}, Properties: &armcompute.DiskProperties{DiskIOPSReadWrite: pointer.Int64(100)}},
+			expectedErr:        true,
+			expectedErrMsg:     fmt.Errorf("AzureDisk - StorageAccountType is not allowed to change from or to UltraSSD_LRS or PremiumV2_LRS disk type"),
+		},
+		{
 			desc:               "an error shall be returned when disk SKU is nil",
 			diskName:           diskName,
 			diskIOPSReadWrite:  "200",
@@ -672,7 +689,7 @@ func TestModifyDisk(t *testing.T) {
 			diskIOPSReadWrite: "200",
 			existedDisk:       &armcompute.Disk{Name: pointer.String(disk1Name), SKU: &armcompute.DiskSKU{Name: &storageAccountTypePremiumLRS}, Properties: &armcompute.DiskProperties{DiskIOPSReadWrite: pointer.Int64(100)}},
 			expectedErr:       true,
-			expectedErrMsg:    fmt.Errorf("AzureDisk - DiskIOPSReadWrite parameter is only applicable in UltraSSD_LRS disk type"),
+			expectedErrMsg:    fmt.Errorf("AzureDisk - DiskIOPSReadWrite parameter is only applicable in UltraSSD_LRS or PremiumV2_LRS disk type"),
 		},
 		{
 			desc:              "new diskMBpsReadWrite but wrong disk type error shall be returned",
@@ -680,7 +697,7 @@ func TestModifyDisk(t *testing.T) {
 			diskMBpsReadWrite: "200",
 			existedDisk:       &armcompute.Disk{Name: pointer.String(disk1Name), SKU: &armcompute.DiskSKU{Name: &storageAccountTypePremiumLRS}, Properties: &armcompute.DiskProperties{DiskMBpsReadWrite: pointer.Int64(100)}},
 			expectedErr:       true,
-			expectedErrMsg:    fmt.Errorf("AzureDisk - DiskMBpsReadWrite parameter is only applicable in UltraSSD_LRS disk type"),
+			expectedErrMsg:    fmt.Errorf("AzureDisk - DiskMBpsReadWrite parameter is only applicable in UltraSSD_LRS or PremiumV2_LRS disk type"),
 		},
 		{
 			desc:               "new diskIOPSReadWrite but failed to parse",

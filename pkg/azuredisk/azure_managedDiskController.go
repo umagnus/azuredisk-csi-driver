@@ -416,7 +416,6 @@ func (c *ManagedDiskController) ResizeDisk(ctx context.Context, diskURI string, 
 
 // ModifyDisk: modify disk
 func (c *ManagedDiskController) ModifyDisk(ctx context.Context, options *ManagedDiskOptions) error {
-	var err error
 	klog.V(4).Infof("azureDisk - modifying managed Name:%s, StorageAccountType:%s, DiskIOPSReadWrite:%s, DiskMBpsReadWrite:%s", options.DiskName, options.StorageAccountType, options.DiskIOPSReadWrite, options.DiskMBpsReadWrite)
 
 	rg, subsID, err := getInfoFromDiskURI(options.SourceResourceID)
@@ -429,6 +428,7 @@ func (c *ManagedDiskController) ModifyDisk(ctx context.Context, options *Managed
 		return err
 	}
 
+	model := armcompute.DiskUpdate{}
 	result, err := diskClient.Get(ctx, rg, options.DiskName)
 	if err != nil {
 		return err
@@ -439,8 +439,14 @@ func (c *ManagedDiskController) ModifyDisk(ctx context.Context, options *Managed
 	}
 
 	diskSku := *result.SKU.Name
-	if options.StorageAccountType != "" {
+	if options.StorageAccountType != "" && options.StorageAccountType != diskSku {
+		if diskSku == armcompute.DiskStorageAccountTypesUltraSSDLRS || diskSku == armcompute.DiskStorageAccountTypesPremiumV2LRS || options.StorageAccountType == armcompute.DiskStorageAccountTypesUltraSSDLRS || options.StorageAccountType == armcompute.DiskStorageAccountTypesPremiumV2LRS {
+			return fmt.Errorf("AzureDisk - StorageAccountType is not allowed to change from or to UltraSSD_LRS or PremiumV2_LRS disk type")
+		}
 		diskSku = options.StorageAccountType
+		model.SKU = &armcompute.DiskSKU{
+			Name: to.Ptr(diskSku),
+		}
 	}
 
 	diskProperties := armcompute.DiskUpdateProperties{}
@@ -463,20 +469,15 @@ func (c *ManagedDiskController) ModifyDisk(ctx context.Context, options *Managed
 			diskMBpsReadWrite := int64(v)
 			diskProperties.DiskMBpsReadWrite = pointer.Int64(diskMBpsReadWrite)
 		}
+
+		model.Properties = &diskProperties
 	} else {
 		if options.DiskIOPSReadWrite != "" {
-			return fmt.Errorf("AzureDisk - DiskIOPSReadWrite parameter is only applicable in UltraSSD_LRS disk type")
+			return fmt.Errorf("AzureDisk - DiskIOPSReadWrite parameter is only applicable in UltraSSD_LRS or PremiumV2_LRS disk type")
 		}
 		if options.DiskMBpsReadWrite != "" {
-			return fmt.Errorf("AzureDisk - DiskMBpsReadWrite parameter is only applicable in UltraSSD_LRS disk type")
+			return fmt.Errorf("AzureDisk - DiskMBpsReadWrite parameter is only applicable in UltraSSD_LRS or PremiumV2_LRS disk type")
 		}
-	}
-
-	model := armcompute.DiskUpdate{
-		SKU: &armcompute.DiskSKU{
-			Name: to.Ptr(diskSku),
-		},
-		Properties: &diskProperties,
 	}
 
 	if _, err := diskClient.Patch(ctx, rg, options.DiskName, model); err != nil {

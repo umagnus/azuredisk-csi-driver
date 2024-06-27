@@ -412,11 +412,8 @@ func (d *Driver) ControllerModifyVolume(ctx context.Context, req *csi.Controller
 		return nil, status.Errorf(codes.InvalidArgument, "Failed parsing disk parameters: %v", err)
 	}
 
-	localCloud := d.cloud
-	localDiskController := d.diskController
-
 	// normalize values
-	skuName, err := azureutils.NormalizeStorageAccountType(diskParams.AccountType, localCloud.Config.Cloud, localCloud.Config.DisableAzureStackCloud)
+	skuName, err := azureutils.NormalizeStorageAccountType(diskParams.AccountType, d.cloud.Config.Cloud, d.cloud.Config.DisableAzureStackCloud)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -454,8 +451,7 @@ func (d *Driver) ControllerModifyVolume(ctx context.Context, req *csi.Controller
 		mc.ObserveOperationWithResult(isOperationSucceeded, consts.VolumeID, diskURI)
 	}()
 
-	err = localDiskController.ModifyDisk(ctx, volumeOptions)
-	if err != nil {
+	if err = d.diskController.ModifyDisk(ctx, volumeOptions); err != nil {
 		if strings.Contains(err.Error(), consts.NotFound) {
 			return nil, status.Error(codes.NotFound, err.Error())
 		}
