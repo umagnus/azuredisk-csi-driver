@@ -480,8 +480,12 @@ func (c *ManagedDiskController) ModifyDisk(ctx context.Context, options *Managed
 		}
 	}
 
-	if _, err := diskClient.Patch(ctx, rg, options.DiskName, model); err != nil {
-		return err
+	if model.SKU != nil || model.Properties != nil {
+		if _, err := diskClient.Patch(ctx, rg, options.DiskName, model); err != nil {
+			return err
+		}
+	} else {
+		klog.V(4).Infof("azureDisk - no modification needed for disk(%s)", options.DiskName)
 	}
 
 	klog.V(2).Infof("azureDisk - modified new MD Name:%s StorageAccountType:%s", options.DiskName, options.StorageAccountType)

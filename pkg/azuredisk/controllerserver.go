@@ -406,8 +406,7 @@ func (d *Driver) ControllerModifyVolume(ctx context.Context, req *csi.Controller
 		return nil, status.Error(codes.NotFound, fmt.Sprintf("Volume not found, failed with error: %v", err))
 	}
 
-	mutableParams := req.GetMutableParameters()
-	diskParams, err := azureutils.ParseDiskParameters(mutableParams)
+	diskParams, err := azureutils.ParseDiskParameters(req.GetMutableParameters())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Failed parsing disk parameters: %v", err)
 	}
@@ -420,16 +419,6 @@ func (d *Driver) ControllerModifyVolume(ctx context.Context, req *csi.Controller
 	if diskParams.AccountType == "" {
 		skuName = ""
 	}
-
-	if _, err := azureutils.NormalizeCachingMode(diskParams.CachingMode); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	if skuName == armcompute.DiskStorageAccountTypesPremiumV2LRS {
-		// PremiumV2LRS only supports None caching mode
-		azureutils.SetKeyValueInMap(diskParams.VolumeContext, consts.CachingModeField, string(v1.AzureDataDiskCachingNone))
-	}
-
-	metricsRequest := "controller_modify_volume"
 
 	klog.V(2).Infof("begin to modify azure disk(%s) account type(%s) rg(%s) location(%s)",
 		diskParams.DiskName, skuName, diskParams.ResourceGroup, diskParams.Location)
@@ -445,7 +434,7 @@ func (d *Driver) ControllerModifyVolume(ctx context.Context, req *csi.Controller
 		SourceType:         consts.SourceVolume,
 	}
 
-	mc := metrics.NewMetricContext(consts.AzureDiskCSIDriverName, metricsRequest, d.cloud.ResourceGroup, d.cloud.SubscriptionID, d.Name)
+	mc := metrics.NewMetricContext(consts.AzureDiskCSIDriverName, "controller_modify_volume", d.cloud.ResourceGroup, d.cloud.SubscriptionID, d.Name)
 	isOperationSucceeded := false
 	defer func() {
 		mc.ObserveOperationWithResult(isOperationSucceeded, consts.VolumeID, diskURI)

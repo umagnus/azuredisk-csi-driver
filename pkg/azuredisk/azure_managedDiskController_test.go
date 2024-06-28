@@ -664,6 +664,13 @@ func TestModifyDisk(t *testing.T) {
 			expectedErr:        false,
 		},
 		{
+			desc:               "nothing to modify and no error shall be returned if everything is good",
+			diskName:           diskName,
+			storageAccountType: armcompute.DiskStorageAccountTypesPremiumLRS,
+			existedDisk:        &armcompute.Disk{Name: pointer.String(disk1Name), SKU: &armcompute.DiskSKU{Name: &storageAccountTypePremiumLRS}, Properties: &armcompute.DiskProperties{DiskIOPSReadWrite: pointer.Int64(100)}},
+			expectedErr:        false,
+		},
+		{
 			desc:               "change from or to UltraSSD_LRS or PremiumV2_LRS disk type shall fail",
 			diskName:           diskName,
 			diskIOPSReadWrite:  "200",
